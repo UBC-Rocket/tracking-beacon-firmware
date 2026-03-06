@@ -5,6 +5,7 @@ Receives H264/H265 stream from cosmostreamer and displays it in a window
 Records video continuously to disk as frames arrive
 """
 
+import argparse
 import cv2
 import numpy as np
 import subprocess
@@ -30,15 +31,7 @@ FRAME_HEIGHT = 1080
 FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT * 3  # 3 bytes per pixel (BGR)
 CAPTURES_DIR = "captures"
 VIDEO_FPS = 30  # Adjust based on your stream's FPS
-RADIO_SERIAL_PORT = "/tmp/telem_rx"
-
-# Initialize overlay system
-telem_source = TelemetrySource(port=RADIO_SERIAL_PORT, baud=57600)
-overlay_manager = OverlayManager()
-overlay_manager.add(StaticImageOverlay("overlay.png"))
-overlay_manager.add(TelemetryOverlay(source=telem_source))
-overlay_manager.add(GaugeOverlay(source=telem_source))
-overlay_manager.add(StatusOverlay())
+DEFAULT_RADIO_SERIAL_PORT = "/tmp/telem_rx"
 
 def read_frames(process, frame_queue):
     """Read raw video frames from GStreamer subprocess"""
@@ -77,6 +70,26 @@ def write_frames(recording_queue, video_writer, frame_counter):
 
 def main():
     global shutdown_flag
+
+    parser = argparse.ArgumentParser(description="UDP video stream receiver and display")
+    parser.add_argument(
+        "--radio-port",
+        default=DEFAULT_RADIO_SERIAL_PORT,
+        help=f"Serial port for radio telemetry (default: {DEFAULT_RADIO_SERIAL_PORT})",
+    )
+    args = parser.parse_args()
+
+    radio_serial_port = args.radio_port
+    if radio_serial_port == DEFAULT_RADIO_SERIAL_PORT:
+        print(f"WARNING: No --radio-port specified, using default: {DEFAULT_RADIO_SERIAL_PORT}")
+
+    # Initialize overlay system
+    telem_source = TelemetrySource(port=radio_serial_port, baud=57600)
+    overlay_manager = OverlayManager()
+    overlay_manager.add(StaticImageOverlay("overlay.png"))
+    overlay_manager.add(TelemetryOverlay(source=telem_source))
+    overlay_manager.add(GaugeOverlay(source=telem_source))
+    overlay_manager.add(StatusOverlay())
 
     print("Starting video receiver...")
     print(f"Listening for UDP stream on port {UDP_PORT}")
