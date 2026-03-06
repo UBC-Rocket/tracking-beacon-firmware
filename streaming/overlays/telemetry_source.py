@@ -113,40 +113,39 @@ class TelemetrySource:
                             self._packet_count += 1
                             self._last_packet_time = time.monotonic()
 
-                                                # Full output - all fields
-                        print(f"[{self._packet_count}] TelemetryPacket:")
-                        print(f"    counter:         {packet.counter}")
-                        print(f"    timestamp_ms:    {packet.timestamp_ms}")
-                        print(f"    state:           {flight_state_name(packet.state)}")
-                        print(f"    accel_x:         {packet.accel_x:.4f}")
-                        print(f"    accel_y:         {packet.accel_y:.4f}")
-                        print(f"    accel_z:         {packet.accel_z:.4f}")
-                        print(f"    gyro_x:          {packet.gyro_x:.4f}")
-                        print(f"    gyro_y:          {packet.gyro_y:.4f}")
-                        print(f"    gyro_z:          {packet.gyro_z:.4f}")
-                        print(f"    kf_altitude:     {packet.kf_altitude:.4f}")
-                        print(f"    kf_velocity:     {packet.kf_velocity:.4f}")
-                        print(f"    kf_alt_variance: {packet.kf_alt_variance:.4f}")
-                        print(f"    kf_vel_variance: {packet.kf_vel_variance:.4f}")
-                        print(f"    baro0_healthy:   {packet.baro0_healthy}")
-                        print(f"    baro0_pressure:  {packet.baro0_pressure:.2f}")
-                        print(f"    baro0_temp:      {packet.baro0_temperature:.2f}")
-                        print(f"    baro0_altitude:  {packet.baro0_altitude:.4f}")
-                        print(f"    baro0_nis:       {packet.baro0_nis:.4f}")
-                        print(f"    baro0_faults:    {packet.baro0_faults}")
-                        print(f"    baro1_healthy:   {packet.baro1_healthy}")
-                        print(f"    baro1_pressure:  {packet.baro1_pressure:.2f}")
-                        print(f"    baro1_temp:      {packet.baro1_temperature:.2f}")
-                        print(f"    baro1_altitude:  {packet.baro1_altitude:.4f}")
-                        print(f"    baro1_nis:       {packet.baro1_nis:.4f}")
-                        print(f"    baro1_faults:    {packet.baro1_faults}")
-                        print(f"    ground_altitude: {packet.ground_altitude:.4f}")
-                        print(f"    gps_latitude:    {packet.gps_latitude:.6f}")
-                        print(f"    gps_longitude:   {packet.gps_longitude:.6f}")
-                        print(f"    gps_altitude:    {packet.gps_altitude:.2f}")
-                        print(f"    gps_speed:       {packet.gps_speed:.2f}")
-                        print(f"    gps_sats:        {packet.gps_sats}")
-                        print(f"    gps_fix:         {packet.gps_fix}")
+                        W = 22  # column width
+
+                        def _fmt(label, value):
+                            return f"{label:<16}{value!s:<14}"
+
+                        sep = "─" * (W * 3 + 2)
+
+                        print(f"\n{'─'*6} Packet #{self._packet_count} {'─'*6}")
+                        print(f"  {'counter':<16}{packet.counter:<14}  {'timestamp_ms':<16}{packet.timestamp_ms:<14}  {'state':<16}{flight_state_name(packet.state)}")
+                        print(sep)
+
+                        # IMU
+                        print(f"  {'IMU':}")
+                        print(f"  {'accel_x':<16}{packet.accel_x:<14.4f}  {'gyro_x':<16}{packet.gyro_x:<14.4f}  {'kf_altitude':<16}{packet.kf_altitude:.4f}")
+                        print(f"  {'accel_y':<16}{packet.accel_y:<14.4f}  {'gyro_y':<16}{packet.gyro_y:<14.4f}  {'kf_velocity':<16}{packet.kf_velocity:.4f}")
+                        print(f"  {'accel_z':<16}{packet.accel_z:<14.4f}  {'gyro_z':<16}{packet.gyro_z:<14.4f}  {'kf_alt_var':<16}{packet.kf_alt_variance:.4f}")
+                        print(f"  {'':<16}{'':<14}  {'':<16}{'':<14}  {'kf_vel_var':<16}{packet.kf_vel_variance:.4f}")
+                        print(sep)
+
+                        # Barometers
+                        print(f"  {'':16}  {'── Baro 0 ──':^30}  {'── Baro 1 ──':^30}")
+                        print(f"  {'healthy':<16}  {str(packet.baro0_healthy):<30}  {str(packet.baro1_healthy):<30}")
+                        print(f"  {'pressure':<16}  {packet.baro0_pressure:<30.2f}  {packet.baro1_pressure:<30.2f}")
+                        print(f"  {'temp':<16}  {packet.baro0_temperature:<30.2f}  {packet.baro1_temperature:<30.2f}")
+                        print(f"  {'altitude':<16}  {packet.baro0_altitude:<30.4f}  {packet.baro1_altitude:<30.4f}")
+                        print(f"  {'nis':<16}  {packet.baro0_nis:<30.4f}  {packet.baro1_nis:<30.4f}")
+                        print(f"  {'faults':<16}  {str(packet.baro0_faults):<30}  {str(packet.baro1_faults):<30}")
+                        print(sep)
+
+                        # GPS + Ground
+                        print(f"  {'ground_alt':<16}{packet.ground_altitude:<14.4f}  {'gps_lat':<16}{packet.gps_latitude:<14.6f}  {'gps_lon':<16}{packet.gps_longitude:.6f}")
+                        print(f"  {'gps_alt':<16}{packet.gps_altitude:<14.2f}  {'gps_speed':<16}{packet.gps_speed:<14.2f}  {'gps_sats':<16}{packet.gps_sats}")
+                        print(f"  {'gps_fix':<16}{packet.gps_fix}")
                         print()
 
             except serial.SerialException:
