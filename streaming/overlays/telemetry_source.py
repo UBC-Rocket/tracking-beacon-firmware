@@ -1,12 +1,14 @@
 """Shared telemetry data source that reads from serial."""
 
 import csv
+import os
 import threading
 import time
 
 import serial
 from datetime import datetime
 
+from main import CAPTURES_DIR
 from serial_decoder import decode_packet, flight_state_name, packet_to_csv_row, packet_to_dict, read_cobs_packet
 
 # CSV column definitions
@@ -46,6 +48,8 @@ CSV_COLUMNS = [
     "gps_fix",
 ]
 
+TELEMETRY_DIR = "telemetry_logs"
+
 class TelemetrySource:
     """
     Background serial reader that decodes COBS/CRC/protobuf telemetry packets.
@@ -67,7 +71,9 @@ class TelemetrySource:
         self._baud = baud
         self._timeout = timeout
 
-        self.csv_file = open(datetime.now().isoformat(timespec='milliseconds') + '.csv', 'w', newline='')
+        os.makedirs(TELEMETRY_DIR, exist_ok=True)
+
+        self.csv_file = open(TELEMETRY_DIR + datetime.now().isoformat(timespec='milliseconds') + '.csv', 'w', newline='')
         self.csv_writer = csv.writer(self.csv_file)
         self.csv_writer.writerow(CSV_COLUMNS)
         print(f"Logging to {self.csv_file.name}")
