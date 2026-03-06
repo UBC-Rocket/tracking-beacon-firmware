@@ -15,6 +15,7 @@ import queue
 import os
 import signal
 from datetime import datetime
+import pyfakewebcam
 
 from overlays import (
     # TODO: add static overlay back in after test 
@@ -64,7 +65,7 @@ def write_frames(recording_queue, video_writer, frame_counter):
     while not shutdown_flag.is_set():
         try:
             frame = recording_queue.get(timeout=0.5)
-            video_writer.write(frame)
+            #video_writer.write(frame)
             frame_counter['count'] += 1
         except queue.Empty:
             continue
@@ -124,9 +125,9 @@ def main():
     video_filename = os.path.join(CAPTURES_DIR, f"capture_{timestamp}.mp4")
     metadata_filename = os.path.join(CAPTURES_DIR, f"capture_{timestamp}.txt")
 
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(video_filename, fourcc, VIDEO_FPS,
-                                   (FRAME_WIDTH, FRAME_HEIGHT))
+    # fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    # video_writer = cv2.VideoWriter(video_filename, fourcc, VIDEO_FPS,
+    #                                (FRAME_WIDTH, FRAME_HEIGHT))
 
     recorded_counter = {'count': 0}
 
@@ -161,7 +162,8 @@ def main():
         )
         writer_thread = threading.Thread(
             target=write_frames,
-            args=(recording_queue, video_writer, recorded_counter),
+            #args=(recording_queue, video_writer, recorded_counter),
+            args=(recording_queue, None, recorded_counter),
             daemon=True
         )
         reader_thread.start()
@@ -172,9 +174,11 @@ def main():
         print("Press 'q' to quit, or close the window")
 
         # Create window
-        window_name = 'Drone Video Feed'
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(window_name, 1280, 720)
+        # window_name = 'Drone Video Feed'
+        # cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        # cv2.resizeWindow(window_name, 1280, 720)
+        camera = pyfakewebcam.FakeWebcam('/dev/video10', FRAME_WIDTH, FRAME_HEIGHT)
+
 
         start_time = datetime.now()
 
@@ -196,7 +200,9 @@ def main():
                     pass  # Drop frame rather than filling memory
 
                 # Display the frame
-                cv2.imshow(window_name, frame)
+                #cv2.imshow(window_name, frame)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                camera.schedule_frame(frame_rgb)
 
             except queue.Empty:
                 # No frame received in timeout period
@@ -206,25 +212,25 @@ def main():
                     break
 
             # Check for 'q' key or window close (must call waitKey for window events)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                print("Quit signal received (pressed 'q')")
-                end_reason = "User quit (pressed 'q')"
-                shutdown_flag.set()
-                break
+            # key = cv2.waitKey(1) & 0xFF
+            # if key == ord('q'):
+            #     print("Quit signal received (pressed 'q')")
+            #     end_reason = "User quit (pressed 'q')"
+            #     shutdown_flag.set()
+            #     break
 
             # Check if window was closed via X button
-            try:
-                if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-                    print("Window closed by user")
-                    end_reason = "Window closed (X button)"
-                    shutdown_flag.set()
-                    break
-            except cv2.error:
-                print("Window no longer exists")
-                end_reason = "Window closed"
-                shutdown_flag.set()
-                break
+            # try:
+            #     if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            #         print("Window closed by user")
+            #         end_reason = "Window closed (X button)"
+            #         shutdown_flag.set()
+            #         break
+            # except cv2.error:
+            #     print("Window no longer exists")
+            #     end_reason = "Window closed"
+            #     shutdown_flag.set()
+            #     break
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
@@ -260,10 +266,10 @@ def main():
                 process.wait()
 
         # Close video writer (finalizes the mp4 file)
-        video_writer.release()
+        #video_writer.release()
 
         telem_source.stop()
-        cv2.destroyAllWindows()
+        #cv2.destroyAllWindows()
         print(f"Total frames displayed: {frame_count}")
         print(f"Total frames recorded: {recorded_counter['count']}")
 
