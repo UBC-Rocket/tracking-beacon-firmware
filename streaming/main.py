@@ -84,7 +84,7 @@ def main():
 
     # GStreamer pipeline - outputs raw BGR frames to stdout
     gst_command = [
-        'gst-launch-1.0',
+        'gst-launch-1.0.exe' if os.name == 'nt' else 'gst-launch-1.0',
         '-q',  # Quiet mode
         'udpsrc',
         f'port={UDP_PORT}',
