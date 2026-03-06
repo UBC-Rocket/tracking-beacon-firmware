@@ -67,6 +67,11 @@ class TelemetrySource:
         self._baud = baud
         self._timeout = timeout
 
+        self.csv_file = open(datetime.now().isoformat(timespec='milliseconds') + '.csv', 'w', newline='')
+        self.csv_writer = csv.writer(self.csv_file)
+        self.csv_writer.writerow(CSV_COLUMNS)
+        print(f"Logging to {self.csv_file.name}")
+
         self._stop_event = threading.Event()
         self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader_thread.start()
@@ -75,10 +80,7 @@ class TelemetrySource:
         """Background thread that reads and decodes serial telemetry."""
         while not self._stop_event.is_set():
             
-            csv_file = open(datetime.now().isoformat(timespec='milliseconds') + '.csv', 'w', newline='')
-            csv_writer = csv.writer(csv_file)
-            csv_writer.writerow(CSV_COLUMNS)
-            print(f"Logging to {csv_file.name}")
+
 
             try:
                 with serial.Serial(self._port, self._baud,
@@ -97,8 +99,8 @@ class TelemetrySource:
                                 self._error_count += 1
                             continue
                         
-                        csv_writer.writerow(packet_to_csv_row(packet))
-                        csv_file.flush()  # Ensure data is written immediately
+                        self.csv_writer.writerow(packet_to_csv_row(packet))
+                        self.csv_file.flush()  # Ensure data is written immediately
 
                         telemetry = packet_to_dict(packet)
                         with self._lock:
