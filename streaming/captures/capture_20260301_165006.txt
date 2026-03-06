@@ -1,0 +1,14 @@
+Capture Metadata
+================
+Filename: capture_20260301_165006.mp4
+Start Time: 2026-03-01 16:50:06
+End Time: 2026-03-01 16:50:19
+Duration: 12.70 seconds
+Total Frames: 0
+Displayed Frames: 0
+Resolution: 1920x1080
+Target FPS: 30
+Actual FPS: 0.00
+File Size: 0.00 MB
+UDP Port: 3000
+End Reason: Signal 2 received

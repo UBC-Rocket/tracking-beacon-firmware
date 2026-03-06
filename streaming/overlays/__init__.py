@@ -5,9 +5,11 @@ Provides a modular way to stack multiple graphics layers on top of video frames.
 """
 
 from .base import OverlayBase
+from .gauge import GaugeOverlay
 from .static_image import StaticImageOverlay
 from .status import StatusOverlay
 from .telemetry import TelemetryOverlay
+from .telemetry_source import TelemetrySource
 
 
 class OverlayManager:
@@ -35,9 +37,11 @@ class OverlayManager:
 
 
 __all__ = [
+    "GaugeOverlay",
     "OverlayBase",
     "OverlayManager",
     "StaticImageOverlay",
     "StatusOverlay",
     "TelemetryOverlay",
+    "TelemetrySource",
 ]

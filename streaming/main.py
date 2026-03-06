@@ -15,7 +15,10 @@ import os
 import signal
 from datetime import datetime
 
-from overlays import OverlayManager, StaticImageOverlay, StatusOverlay, TelemetryOverlay
+from overlays import (
+    GaugeOverlay, OverlayManager, StaticImageOverlay, StatusOverlay,
+    TelemetryOverlay, TelemetrySource,
+)
 
 # Global shutdown flag for clean exit from any context
 shutdown_flag = threading.Event()
@@ -27,12 +30,14 @@ FRAME_HEIGHT = 1080
 FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT * 3  # 3 bytes per pixel (BGR)
 CAPTURES_DIR = "captures"
 VIDEO_FPS = 30  # Adjust based on your stream's FPS
-RADIO_SERIAL_PORT = "/dev/ttyUSB0"
+RADIO_SERIAL_PORT = "/tmp/telem_rx"
 
 # Initialize overlay system
+telem_source = TelemetrySource(port=RADIO_SERIAL_PORT, baud=57600)
 overlay_manager = OverlayManager()
 overlay_manager.add(StaticImageOverlay("overlay.png"))
-overlay_manager.add(TelemetryOverlay(port=RADIO_SERIAL_PORT, baud=57600))
+overlay_manager.add(TelemetryOverlay(source=telem_source))
+overlay_manager.add(GaugeOverlay(source=telem_source))
 overlay_manager.add(StatusOverlay())
 
 def read_frames(process, frame_queue):
@@ -241,6 +246,7 @@ def main():
         # Close video writer (finalizes the mp4 file)
         video_writer.release()
 
+        telem_source.stop()
         cv2.destroyAllWindows()
         print(f"Total frames displayed: {frame_count}")
         print(f"Total frames recorded: {recorded_counter['count']}")

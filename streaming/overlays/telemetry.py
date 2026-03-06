@@ -1,12 +1,8 @@
-"""Telemetry overlay for displaying live rocket data from serial."""
+"""Telemetry overlay for displaying live rocket data."""
 
-import threading
 import time
 
 import cv2
-import serial
-
-from serial_decoder import decode_packet, packet_to_dict, read_cobs_packet
 
 from .base import OverlayBase
 
@@ -31,75 +27,21 @@ STATE_COLORS = {
 
 class TelemetryOverlay(OverlayBase):
     """
-    Reads telemetry from serial port, decodes COBS/CRC/protobuf packets,
-    and renders a HUD overlay onto the video frame.
+    Renders a HUD overlay of live rocket telemetry onto the video frame.
+
+    Reads data from a shared TelemetrySource instance.
     """
 
-    def __init__(self, port, baud=57600, timeout=1.0, enabled=True,
+    def __init__(self, source, enabled=True,
                  position=(10, 80), font_scale=0.7, line_spacing=30):
         super().__init__(enabled)
+        self.source = source
         self.position = position
         self.font_scale = font_scale
         self.line_spacing = line_spacing
 
         self.font = cv2.FONT_HERSHEY_SIMPLEX
         self.thickness = 2
-
-        # Thread-safe telemetry storage
-        self._lock = threading.Lock()
-        self._telemetry = {}
-        self._connected = False
-        self._packet_count = 0
-        self._error_count = 0
-        self._last_packet_time = 0.0
-        self._stale_threshold = 2.0  # seconds before data is considered stale
-
-        # Serial config
-        self._port = port
-        self._baud = baud
-        self._timeout = timeout
-
-        # Background serial reader thread
-        self._stop_event = threading.Event()
-        self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
-        self._reader_thread.start()
-
-    def _reader_loop(self):
-        """Background thread that reads and decodes serial telemetry."""
-        while not self._stop_event.is_set():
-            try:
-                with serial.Serial(self._port, self._baud,
-                                   timeout=self._timeout) as ser:
-                    with self._lock:
-                        self._connected = True
-
-                    while not self._stop_event.is_set():
-                        raw_data = read_cobs_packet(ser)
-                        if raw_data is None:
-                            continue
-
-                        packet = decode_packet(raw_data)
-                        if packet is None:
-                            with self._lock:
-                                self._error_count += 1
-                            continue
-
-                        telemetry = packet_to_dict(packet)
-                        with self._lock:
-                            self._telemetry = telemetry
-                            self._packet_count += 1
-                            self._last_packet_time = time.monotonic()
-
-            except serial.SerialException:
-                with self._lock:
-                    self._connected = False
-                # Wait before reconnecting
-                self._stop_event.wait(2.0)
-
-    def stop(self):
-        """Stop the background reader thread."""
-        self._stop_event.set()
-        self._reader_thread.join(timeout=2.0)
 
     def _draw_text(self, frame, text, position, color=WHITE):
         """Draw text with a black background for readability."""
@@ -115,12 +57,13 @@ class TelemetryOverlay(OverlayBase):
 
     def render(self, frame, context=None):
         """Render telemetry HUD onto frame."""
-        with self._lock:
-            telem = self._telemetry.copy()
-            connected = self._connected
-            pkt_count = self._packet_count
-            err_count = self._error_count
-            last_time = self._last_packet_time
+        snapshot = self.source.get()
+        telem = snapshot["telemetry"]
+        connected = snapshot["connected"]
+        pkt_count = snapshot["packet_count"]
+        err_count = snapshot["error_count"]
+        last_time = snapshot["last_packet_time"]
+        stale = snapshot["stale"]
 
         x, y = self.position
         dy = self.line_spacing
@@ -132,8 +75,6 @@ class TelemetryOverlay(OverlayBase):
         if not telem:
             self._draw_text(frame, "TELEMETRY: WAITING...", (x, y), YELLOW)
             return frame
-
-        stale = (time.monotonic() - last_time) > self._stale_threshold if last_time else False
 
         state = telem.get("state", "UNKNOWN")
         state_color = STATE_COLORS.get(state, WHITE)

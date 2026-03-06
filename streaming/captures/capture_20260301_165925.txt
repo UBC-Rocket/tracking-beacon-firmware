@@ -1,0 +1,14 @@
+Capture Metadata
+================
+Filename: capture_20260301_165925.mp4
+Start Time: 2026-03-01 16:59:25
+End Time: 2026-03-01 16:59:56
+Duration: 30.77 seconds
+Total Frames: 535
+Displayed Frames: 535
+Resolution: 1920x1080
+Target FPS: 30
+Actual FPS: 17.39
+File Size: 20.39 MB
+UDP Port: 3000
+End Reason: Stream ended or connection lost
