@@ -17,7 +17,9 @@ import signal
 from datetime import datetime
 
 from overlays import (
-    GaugeOverlay, OverlayManager, StaticImageOverlay, StatusOverlay,
+    # TODO: add static overlay back in after test 
+    # launchGaugeOverlay, OverlayManager, StaticImageOverlay, StatusOverlay,
+    GaugeOverlay, OverlayManager, StatusOverlay,
     TelemetryOverlay, TelemetrySource,
 )
 
@@ -86,7 +88,8 @@ def main():
     # Initialize overlay system
     telem_source = TelemetrySource(port=radio_serial_port, baud=57600)
     overlay_manager = OverlayManager()
-    overlay_manager.add(StaticImageOverlay("overlay.png"))
+    # TODO: add static overlay back in after test 
+    # overlay_manager.add(StaticImageOverlay("overlay.png"))
     overlay_manager.add(TelemetryOverlay(source=telem_source))
     overlay_manager.add(GaugeOverlay(source=telem_source))
     overlay_manager.add(StatusOverlay())
