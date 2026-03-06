@@ -34,6 +34,7 @@ FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT * 3  # 3 bytes per pixel (BGR)
 CAPTURES_DIR = "captures"
 VIDEO_FPS = 30  # Adjust based on your stream's FPS
 DEFAULT_RADIO_SERIAL_PORT = "/tmp/telem_rx"
+ENCODING = "H264"  # Change to "H265" if using H265 stream
 
 def read_frames(process, frame_queue):
     """Read raw video frames from GStreamer subprocess"""
@@ -104,8 +105,13 @@ def main():
         '-q',  # Quiet mode
         'udpsrc',
         f'port={UDP_PORT}',
-        'buffer-size=13000000',
-        '!', 'parsebin',
+        'buffer-size=26214400',
+        f'caps=application/x-rtp,media=video,encoding-name={ENCODING},payload=96,clock-rate=90000',
+        '!', 'rtpjitterbuffer',
+        'latency=400',
+        'drop-on-latency=true',
+        '!', 'rtph264depay' if ENCODING == "H264" else 'rtph265depay',
+        '!', 'h264parse' if ENCODING == "H264" else 'h265parse',
         '!', 'decodebin',
         '!', 'videoconvert',
         '!', f'video/x-raw,format=BGR,width={FRAME_WIDTH},height={FRAME_HEIGHT}',
@@ -146,7 +152,7 @@ def main():
             gst_command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            bufsize=FRAME_SIZE
+            bufsize=FRAME_SIZE * 4
         )
 
         # Create queues for frames
