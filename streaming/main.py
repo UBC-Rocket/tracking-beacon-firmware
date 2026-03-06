@@ -101,21 +101,26 @@ def main():
 
     # GStreamer pipeline - outputs raw BGR frames to stdout
     gst_command = [
-        'gst-launch-1.0.exe' if os.name == 'nt' else 'gst-launch-1.0',
-        '-q',  # Quiet mode
+        'gst-launch-1.0.exe' if sys.platform == "win32" else 'gst-launch-1.0',
+        '-q',
         'udpsrc',
         f'port={UDP_PORT}',
         'buffer-size=26214400',
-        f'caps=application/x-rtp,media=video,encoding-name={ENCODING},payload=96,clock-rate=90000',
+        f'caps=application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000',
         '!', 'rtpjitterbuffer',
-        'latency=400',
+        'latency=600',
         'drop-on-latency=true',
-        '!', 'rtph264depay' if ENCODING == "H264" else 'rtph265depay',
-        '!', 'h264parse' if ENCODING == "H264" else 'h265parse',
-        '!', 'decodebin',
+        '!', 'rtph264depay',
+        '!', 'queue',
+        'max-size-buffers=600',
+        'max-size-bytes=0',
+        'max-size-time=0',
+        'leaky=downstream',
+        '!', 'h264parse',
+        '!', 'vaapih264dec',
         '!', 'videoconvert',
         '!', f'video/x-raw,format=BGR,width={FRAME_WIDTH},height={FRAME_HEIGHT}',
-        '!', 'fdsink',  # Output to stdout (file descriptor sink)
+        '!', 'fdsink',
     ]
 
     print("Starting GStreamer process...")
