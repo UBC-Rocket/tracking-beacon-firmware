@@ -16,20 +16,12 @@ import crcmod
 import serial
 from cobs import cobs
 from google.protobuf.message import DecodeError
+from datetime import datetime
 
 from TelemetryPacket_pb2 import FlightState, TelemetryPacket
 
 # CRC-16-CCITT Kermit variant (polynomial 0x1021, init 0x0000, reflected)
 crc16_func = crcmod.predefined.mkCrcFun('kermit')
-
-FLIGHT_STATE_NAMES = {
-    FlightState.STANDBY: "STANDBY",
-    FlightState.ASCENT: "ASCENT",
-    FlightState.MACH_LOCK: "MACH_LOCK",
-    FlightState.DROGUE_DESCENT: "DROGUE_DESCENT",
-    FlightState.MAIN_DESCENT: "MAIN_DESCENT",
-    FlightState.LANDED: "LANDED",
-}
 
 
 def decode_packet(raw_data: bytes) -> TelemetryPacket | None:
@@ -98,6 +90,17 @@ def read_cobs_packet(ser: serial.Serial) -> bytes | None:
             print("[ERROR] Buffer overflow, discarding", file=sys.stderr)
             buffer.clear()
 
+def flight_state_name(state: FlightState) -> str:
+    """Convert FlightState enum to human-readable string."""
+    names = {
+        FlightState.STANDBY: "STANDBY",
+        FlightState.ASCENT: "ASCENT",
+        FlightState.MACH_LOCK: "MACH_LOCK",
+        FlightState.DROGUE_DESCENT: "DROGUE_DESCENT",
+        FlightState.MAIN_DESCENT: "MAIN_DESCENT",
+        FlightState.LANDED: "LANDED",
+    }
+    return names.get(state, f"UNKNOWN({state})")
 
 def packet_to_dict(packet: TelemetryPacket) -> dict:
     """Convert a TelemetryPacket to a plain dict for overlay consumption."""
@@ -105,7 +108,7 @@ def packet_to_dict(packet: TelemetryPacket) -> dict:
     return {
         "counter": packet.counter,
         "timestamp_ms": packet.timestamp_ms,
-        "state": FLIGHT_STATE_NAMES.get(packet.state, f"UNKNOWN({packet.state})"),
+        "state": flight_state_name(packet.state),
         "accel_x": packet.accel_x,
         "accel_y": packet.accel_y,
         "accel_z": packet.accel_z,
@@ -133,3 +136,41 @@ def packet_to_dict(packet: TelemetryPacket) -> dict:
         "gps_sats": packet.gps_sats,
         "gps_fix": packet.gps_fix,
     }
+
+def packet_to_csv_row(packet: TelemetryPacket) -> list:
+    """Convert a TelemetryPacket to a CSV row."""
+    return [
+        datetime.now().isoformat(timespec='milliseconds'),
+        packet.counter,
+        packet.timestamp_ms,
+        flight_state_name(packet.state),
+        packet.accel_x,
+        packet.accel_y,
+        packet.accel_z,
+        packet.gyro_x,
+        packet.gyro_y,
+        packet.gyro_z,
+        packet.kf_altitude,
+        packet.kf_velocity,
+        packet.kf_alt_variance,
+        packet.kf_vel_variance,
+        packet.baro0_healthy,
+        packet.baro1_healthy,
+        packet.baro0_pressure,
+        packet.baro0_temperature,
+        packet.baro0_altitude,
+        packet.baro0_nis,
+        packet.baro0_faults,
+        packet.baro1_pressure,
+        packet.baro1_temperature,
+        packet.baro1_altitude,
+        packet.baro1_nis,
+        packet.baro1_faults,
+        packet.ground_altitude,
+        packet.gps_latitude,
+        packet.gps_longitude,
+        packet.gps_altitude,
+        packet.gps_speed,
+        packet.gps_sats,
+        packet.gps_fix,
+    ]
