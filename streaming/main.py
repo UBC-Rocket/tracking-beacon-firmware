@@ -30,7 +30,7 @@ UDP_PORT = 3000
 FRAME_WIDTH = 1920  # Adjust to match your camera resolution
 FRAME_HEIGHT = 1080
 FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT * 3  # 3 bytes per pixel (BGR)
-VIDEO_FPS = 30  # Adjust based on your stream's FPS
+VIDEO_FPS = 60  # Adjust based on your stream's FPS
 DEFAULT_RADIO_SERIAL_PORT = "/tmp/telem_rx"
 ENCODING = "H264"  # Change to "H265" if using H265 stream
 
