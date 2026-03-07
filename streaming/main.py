@@ -74,10 +74,22 @@ def read_frames(process):
     while not shutdown_flag.is_set():
         try:
             raw_frame = process.stdout.read(FRAME_SIZE)
+
+            if len(raw_frame) == 0:
+                # EOF — GStreamer process exited. Wait briefly and check if
+                # we should keep running (e.g. a restart could be wired in
+                # later). For now, just log and spin so the overlay thread
+                # and camera output loop keep running on the last good frame.
+                print("[WARNING] GStreamer stdout closed (stream ended). "
+                      "Waiting for restart or Ctrl+C...")
+                time.sleep(1.0)
+                continue
+
             if len(raw_frame) != FRAME_SIZE:
-                print("Stream ended or incomplete frame")
-                shutdown_flag.set()
-                break
+                # Partial frame — transient dropout or pipeline hiccup.
+                # Discard silently and keep reading; the last good frame
+                # will continue to be shown by the overlay/camera threads.
+                continue
 
             # Convert raw bytes to numpy array (copy to make it writable)
             frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape(
@@ -94,8 +106,9 @@ def read_frames(process):
             _new_raw_frame_event.set()
 
         except Exception as e:
-            print(f"Error reading frame: {e}")
-            break
+            print(f"[WARNING] Error reading frame: {e}. Continuing...")
+            time.sleep(0.05)
+            continue
 
 
 def render_overlays(overlay_manager):
@@ -186,7 +199,7 @@ def main():
         'buffer-size=26214400',
         f'caps=application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000',
         '!', 'rtpjitterbuffer',
-        'latency=100',
+        'latency=600',
         'drop-on-latency=true',
         '!', 'rtph264depay',
         '!', 'queue',
@@ -196,11 +209,9 @@ def main():
         'leaky=downstream',
         '!', 'h264parse',
         '!', 'vaapih264dec',
-        'error-resilient=true',
         '!', 'videoconvert',
         '!', f'video/x-raw,format=BGR,width={FRAME_WIDTH},height={FRAME_HEIGHT}',
         '!', 'fdsink',
-        'sync=false',
     ]
 
     print("Starting GStreamer process...")
@@ -225,7 +236,7 @@ def main():
             gst_command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            bufsize=0
+            bufsize=FRAME_SIZE
         )
 
         # Thread 1: reads raw frames from GStreamer → _latest_raw_frame
@@ -273,12 +284,6 @@ def main():
             sleep_time = frame_interval - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
-
-            # Only stop if both upstream threads have exited
-            if not reader_thread.is_alive() and not overlay_thread.is_alive():
-                print("Both processing threads stopped")
-                end_reason = "Reader and overlay threads both ended"
-                break
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
