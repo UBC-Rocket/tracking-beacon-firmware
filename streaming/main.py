@@ -10,6 +10,7 @@ import numpy as np
 import subprocess
 import sys
 import threading
+import time
 import queue
 import signal
 from datetime import datetime
@@ -34,8 +35,42 @@ VIDEO_FPS = 30  # Adjust based on your stream's FPS
 DEFAULT_RADIO_SERIAL_PORT = "/tmp/telem_rx"
 ENCODING = "H264"  # Change to "H265" if using H265 stream
 
-def read_frames(process, frame_queue):
-    """Read raw video frames from GStreamer subprocess"""
+# ---------------------------------------------------------------------------
+# Shared state between threads
+#
+# _latest_raw_frame:    Most recent decoded frame from GStreamer (no overlays).
+#                       Persists across stream drops so the overlay thread
+#                       always has something to composite onto.
+#
+# _latest_output_frame: Most recent fully-composited frame (raw + overlays).
+#                       Persists across overlay errors so the camera output
+#                       loop always has something to send.
+#
+# _new_raw_frame_event: Signals the overlay thread that a fresh raw frame is
+#                       available. The overlay thread does not block waiting
+#                       for it — it has a timeout so it stays responsive to
+#                       shutdown_flag and can re-render stale frames with
+#                       updated telemetry even if the video stream is frozen.
+# ---------------------------------------------------------------------------
+_latest_raw_frame = None
+_raw_frame_lock = threading.Lock()
+_new_raw_frame_event = threading.Event()
+
+_latest_output_frame = None
+_output_frame_lock = threading.Lock()
+
+
+def read_frames(process):
+    """
+    Thread 1 — GStreamer reader.
+
+    Reads raw BGR frames from the GStreamer subprocess and stores the most
+    recent one in _latest_raw_frame.  If the stream drops, the variable
+    simply retains the last good frame so the overlay thread can continue
+    compositing telemetry onto it.
+    """
+    global _latest_raw_frame
+
     while not shutdown_flag.is_set():
         try:
             raw_frame = process.stdout.read(FRAME_SIZE)
@@ -45,22 +80,72 @@ def read_frames(process, frame_queue):
                 break
 
             # Convert raw bytes to numpy array (copy to make it writable)
-            frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((FRAME_HEIGHT, FRAME_WIDTH, 3)).copy()
+            frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape(
+                (FRAME_HEIGHT, FRAME_WIDTH, 3)
+            ).copy()
 
-            # Put frame in display queue, dropping oldest frame if full
-            # This ensures the main loop always gets the most recent frames
-            try:
-                frame_queue.put_nowait(frame)
-            except queue.Full:
-                try:
-                    frame_queue.get_nowait()  # discard oldest
-                except queue.Empty:
-                    pass
-                frame_queue.put_nowait(frame)
+            with _raw_frame_lock:
+                _latest_raw_frame = frame
+
+            # Signal overlay thread that a new frame is ready.
+            # Using set() rather than put() means we never queue stale frames —
+            # if the overlay thread is busy, it will pick up the newest frame
+            # on its next iteration rather than processing every intermediate one.
+            _new_raw_frame_event.set()
 
         except Exception as e:
             print(f"Error reading frame: {e}")
             break
+
+
+def render_overlays(overlay_manager):
+    """
+    Thread 2 — Overlay renderer.
+
+    Waits for new raw frames (with a timeout so it stays alive during stream
+    drops), composites all overlays, and stores the result in
+    _latest_output_frame.
+
+    Isolation guarantees:
+      - If the video stream drops, this thread keeps running and re-renders
+        telemetry onto the last known raw frame.
+      - If overlay rendering throws, the exception is caught and the raw
+        frame is stored as-is, keeping _latest_output_frame alive.
+      - TelemetrySource.get() is non-blocking and always returns the last
+        known packet, so a serial dropout does not stall this thread.
+    """
+    global _latest_output_frame
+    local_frame_count = 0
+
+    while not shutdown_flag.is_set():
+        # Wait up to 100 ms for a new raw frame.  The timeout means this
+        # thread wakes periodically even when the stream is frozen, allowing
+        # it to push updated telemetry text onto the last known video frame.
+        _new_raw_frame_event.wait(timeout=0.1)
+        _new_raw_frame_event.clear()
+
+        with _raw_frame_lock:
+            raw = _latest_raw_frame
+
+        if raw is None:
+            # No frame has arrived yet — nothing to composite onto.
+            continue
+
+        # Work on a copy so _latest_raw_frame is never mutated by overlays.
+        frame = raw.copy()
+        local_frame_count += 1
+
+        try:
+            context = {"frame_count": local_frame_count, "recording": True}
+            frame = overlay_manager.render(frame, context)
+        except Exception as e:
+            # Overlay crash must not kill the stream.  Log the error and fall
+            # through with the undecorated raw frame so the camera loop still
+            # receives a valid image.
+            print(f"[WARNING] Overlay render error (using raw frame): {e}")
+
+        with _output_frame_lock:
+            _latest_output_frame = frame
 
 
 def main():
@@ -143,49 +228,57 @@ def main():
             bufsize=0
         )
 
-        # Create queue for frames
-        frame_queue = queue.Queue(maxsize=5)
-
-        # Start reader thread
+        # Thread 1: reads raw frames from GStreamer → _latest_raw_frame
         reader_thread = threading.Thread(
             target=read_frames,
-            args=(process, frame_queue),
-            daemon=True
+            args=(process,),
+            daemon=True,
         )
+
+        # Thread 2: composites overlays onto _latest_raw_frame → _latest_output_frame
+        overlay_thread = threading.Thread(
+            target=render_overlays,
+            args=(overlay_manager,),
+            daemon=True,
+        )
+
         reader_thread.start()
+        overlay_thread.start()
 
         print("Video stream opened successfully!")
         print("Press Ctrl+C to quit")
 
-        # Create window
-        # window_name = 'Drone Video Feed'
-        # cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        # cv2.resizeWindow(window_name, 1280, 720)
         camera = pyfakewebcam.FakeWebcam('/dev/video10', FRAME_WIDTH, FRAME_HEIGHT)
 
-
         start_time = datetime.now()
+        frame_interval = 1.0 / VIDEO_FPS
 
+        # Main loop: paces at VIDEO_FPS and pushes the latest composited frame
+        # to the virtual camera.  This loop is intentionally decoupled from
+        # both the GStreamer reader and the overlay renderer — it will keep
+        # sending frames to pyfakewebcam even if either upstream thread stalls,
+        # simply repeating the last good output frame.
         while not shutdown_flag.is_set():
-            try:
-                # Get frame from display queue (short timeout to stay responsive)
-                frame = frame_queue.get(timeout=0.1)
+            t0 = time.monotonic()
 
+            with _output_frame_lock:
+                frame = _latest_output_frame
+
+            if frame is not None:
                 frame_count += 1
-
-                # Apply overlays to frame
-                context = {"frame_count": frame_count, "recording": True}
-                frame = overlay_manager.render(frame, context)
-
-                # Display the frame (swap BGR→RGB via numpy slice, no copy)
                 camera.schedule_frame(frame[:, :, ::-1])
 
-            except queue.Empty:
-                # No frame received in timeout period
-                if not reader_thread.is_alive():
-                    print("Frame reader thread stopped")
-                    end_reason = "Stream ended or connection lost"
-                    break
+            # Pace the output loop to VIDEO_FPS regardless of upstream speed
+            elapsed = time.monotonic() - t0
+            sleep_time = frame_interval - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+            # Only stop if both upstream threads have exited
+            if not reader_thread.is_alive() and not overlay_thread.is_alive():
+                print("Both processing threads stopped")
+                end_reason = "Reader and overlay threads both ended"
+                break
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
@@ -201,10 +294,13 @@ def main():
         end_time = datetime.now()
         shutdown_flag.set()  # Ensure flag is set for cleanup
 
-        # Give threads time to finish
         if 'reader_thread' in locals() and reader_thread.is_alive():
             print("Waiting for reader thread to finish...")
             reader_thread.join(timeout=2.0)
+
+        if 'overlay_thread' in locals() and overlay_thread.is_alive():
+            print("Waiting for overlay thread to finish...")
+            overlay_thread.join(timeout=2.0)
 
         # Cleanup process
         if 'process' in locals():
