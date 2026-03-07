@@ -30,10 +30,11 @@ class StaticImageOverlay(OverlayBase):
             self.overlay_bgr = image[:, :, :3]
             self.alpha_channel = image[:, :, 3]
         else:
-            # No alpha channel, use as-is with full opacity
-            ##TODO: change this. print a message to the terminal about this and then dont overlay it. I dont want the video feed to get covered up
-            self.overlay_bgr = image
-            self.alpha_channel = np.ones(image.shape[:2], dtype=np.uint8) * 255
+            # No alpha channel — overlaying this would cover the entire video
+            # feed with an opaque image. Skip it and warn instead.
+            print(f"Warning: Overlay image '{self.image_path}' has no alpha channel "
+                  f"and will not be applied (would cover the full video frame).")
+            return
 
         print(f"Loaded overlay: {self.image_path} ({image.shape[1]}x{image.shape[0]})")
 

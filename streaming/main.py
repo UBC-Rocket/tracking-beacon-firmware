@@ -11,7 +11,6 @@ import subprocess
 import sys
 import threading
 import time
-import queue
 import signal
 from datetime import datetime
 import pyfakewebcam
@@ -59,14 +58,26 @@ _new_raw_frame_event = threading.Event()
 _latest_output_frame = None
 _output_frame_lock = threading.Lock()
 
-# Set while good frames are arriving; cleared after STREAM_DROPOUT_THRESHOLD
-# consecutive bad reads. Used by the overlay thread and main loop.
-_stream_alive = threading.Event()
+# Timestamp of the last successfully decoded frame. Initialised to 0.0
+# (i.e. "never"). The overlay thread compares against this with
+# time.monotonic() — if the gap exceeds STREAM_TIMEOUT_SECONDS it switches
+# to the loading screen.  This approach works even when process.stdout.read()
+# is blocking (no UDP sender present), because the check lives entirely in
+# the overlay thread and does not depend on read() returning at all.
+_last_good_frame_time: float = 0.0
+_frame_time_lock = threading.Lock()
 
-# How many consecutive bad reads (EOF or partial) before we consider the
-# stream down and switch to the loading screen. At 30 fps this is 3 seconds.
-STREAM_DROPOUT_THRESHOLD = 90
+# Seconds without a good frame before the loading screen appears.
+# On startup this is also how long the loading screen shows before the
+# first real frame arrives.
+STREAM_TIMEOUT_SECONDS = 3.0
 
+
+def _is_stream_alive() -> bool:
+    """Return True if a good frame arrived within the last STREAM_TIMEOUT_SECONDS."""
+    with _frame_time_lock:
+        last = _last_good_frame_time
+    return last > 0.0 and (time.monotonic() - last) < STREAM_TIMEOUT_SECONDS
 
 def make_loading_frame() -> np.ndarray:
     """
@@ -119,37 +130,32 @@ def read_frames(process):
     simply retains the last good frame so the overlay thread can continue
     compositing telemetry onto it.
     """
-    global _latest_raw_frame
-
-    consecutive_misses = 0
+    global _latest_raw_frame, _last_good_frame_time
 
     while not shutdown_flag.is_set():
         try:
             raw_frame = process.stdout.read(FRAME_SIZE)
 
             if len(raw_frame) == 0:
-                # EOF — GStreamer process exited.
-                consecutive_misses += 1
-                if consecutive_misses == 1:
-                    print("[WARNING] GStreamer stdout closed (stream ended). "
-                          "Waiting for restart or Ctrl+C...")
-                if consecutive_misses >= STREAM_DROPOUT_THRESHOLD:
-                    _stream_alive.clear()
+                # EOF — GStreamer process exited. Log once and spin; the
+                # overlay thread will switch to the loading screen on its own
+                # after STREAM_TIMEOUT_SECONDS without a timestamp update.
+                print("[WARNING] GStreamer stdout closed (stream ended). "
+                      "Waiting for restart or Ctrl+C...")
                 time.sleep(1.0)
                 continue
 
             if len(raw_frame) != FRAME_SIZE:
-                # Partial frame — transient dropout or pipeline hiccup.
-                consecutive_misses += 1
-                if consecutive_misses >= STREAM_DROPOUT_THRESHOLD:
-                    _stream_alive.clear()
+                # Partial frame — transient dropout, discard silently.
+                # Do NOT update _last_good_frame_time so the timeout fires
+                # correctly if this keeps happening.
                 continue
 
-            # Good frame — reset miss counter and mark stream as live.
-            consecutive_misses = 0
-            _stream_alive.set()
+            # Good frame — update the freshness timestamp first so the
+            # overlay thread sees it as alive on its very next iteration.
+            with _frame_time_lock:
+                _last_good_frame_time = time.monotonic()
 
-            # Convert raw bytes to numpy array (copy to make it writable)
             frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape(
                 (FRAME_HEIGHT, FRAME_WIDTH, 3)
             ).copy()
@@ -157,17 +163,10 @@ def read_frames(process):
             with _raw_frame_lock:
                 _latest_raw_frame = frame
 
-            # Signal overlay thread that a new frame is ready.
-            # Using set() rather than put() means we never queue stale frames —
-            # if the overlay thread is busy, it will pick up the newest frame
-            # on its next iteration rather than processing every intermediate one.
             _new_raw_frame_event.set()
 
         except Exception as e:
             print(f"[WARNING] Error reading frame: {e}. Continuing...")
-            consecutive_misses += 1
-            if consecutive_misses >= STREAM_DROPOUT_THRESHOLD:
-                _stream_alive.clear()
             time.sleep(0.05)
             continue
 
@@ -201,8 +200,15 @@ def render_overlays(overlay_manager):
         with _raw_frame_lock:
             raw = _latest_raw_frame
 
-        if raw is None:
-            # No frame has arrived yet — nothing to composite onto.
+        if not _is_stream_alive():
+            # No good frame within STREAM_TIMEOUT_SECONDS — covers both the
+            # startup case (never received anything) and mid-flight dropout.
+            # Generate a fresh loading frame each iteration so the dot
+            # animation stays live; telemetry overlays still render on top.
+            raw = make_loading_frame()
+        elif raw is None:
+            # Timestamp updated but frame array not written yet — rare race on
+            # startup, wait one more iteration.
             continue
 
         # Work on a copy so _latest_raw_frame is never mutated by overlays.
@@ -337,7 +343,8 @@ def main():
                 frame = _latest_output_frame
 
             if frame is not None:
-                frame_count += 1
+                if _is_stream_alive():
+                    frame_count += 1
                 camera.schedule_frame(frame[:, :, ::-1])
 
             # Pace the output loop to VIDEO_FPS regardless of upstream speed

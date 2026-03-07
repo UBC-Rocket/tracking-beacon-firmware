@@ -174,6 +174,8 @@ class TelemetrySource:
             }
 
     def stop(self):
-        """Stop the background reader thread."""
+        """Stop the background reader thread and flush/close the CSV log."""
         self._stop_event.set()
         self._reader_thread.join(timeout=2.0)
+        self.csv_file.flush()
+        self.csv_file.close()
