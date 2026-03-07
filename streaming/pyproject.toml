@@ -11,4 +11,5 @@ dependencies = [
     "crcmod>=1.7",
     "protobuf>=5.0",
     "pyserial>=3.5",
+    "pyfakewebcam>=0.1.0",
 ]
