@@ -101,7 +101,7 @@ def main():
         'buffer-size=26214400',
         f'caps=application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000',
         '!', 'rtpjitterbuffer',
-        'latency=600',
+        'latency=100',
         'drop-on-latency=true',
         '!', 'rtph264depay',
         '!', 'queue',
@@ -111,9 +111,11 @@ def main():
         'leaky=downstream',
         '!', 'h264parse',
         '!', 'vaapih264dec',
+        'error-resilient=true',
         '!', 'videoconvert',
         '!', f'video/x-raw,format=BGR,width={FRAME_WIDTH},height={FRAME_HEIGHT}',
         '!', 'fdsink',
+        'sync=false',
     ]
 
     print("Starting GStreamer process...")
@@ -138,7 +140,7 @@ def main():
             gst_command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            bufsize=FRAME_SIZE
+            bufsize=0
         )
 
         # Create queue for frames
