@@ -59,6 +59,56 @@ _new_raw_frame_event = threading.Event()
 _latest_output_frame = None
 _output_frame_lock = threading.Lock()
 
+# Set while good frames are arriving; cleared after STREAM_DROPOUT_THRESHOLD
+# consecutive bad reads. Used by the overlay thread and main loop.
+_stream_alive = threading.Event()
+
+# How many consecutive bad reads (EOF or partial) before we consider the
+# stream down and switch to the loading screen. At 30 fps this is 3 seconds.
+STREAM_DROPOUT_THRESHOLD = 90
+
+
+def make_loading_frame() -> np.ndarray:
+    """
+    Generate an animated 'FETCHING STREAM' placeholder frame.
+    The dot count (., .., ...) cycles every 0.5 s using wall time so each
+    call produces a slightly different image — no state needed.
+    """
+    import cv2
+
+    frame = np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
+    # Subtle dark grid to avoid a completely black screen
+    frame[::40, :] = (25, 25, 25)
+    frame[:, ::40] = (25, 25, 25)
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    dots = "." * (int(time.monotonic() * 2) % 4)
+
+    lines = [
+        ("NO SIGNAL", 1.4, (0, 60, 180)),
+        (f"FETCHING STREAM{dots}", 0.9, (180, 180, 180)),
+    ]
+
+    total_h = sum(
+        cv2.getTextSize(text, font, scale, 2)[0][1] + 20
+        for text, scale, _ in lines
+    )
+    y = FRAME_HEIGHT // 2 - total_h // 2
+
+    for text, scale, color in lines:
+        (tw, th), _ = cv2.getTextSize(text, font, scale, 2)
+        x = (FRAME_WIDTH - tw) // 2
+        cv2.putText(frame, text, (x + 2, y + 2), font, scale, (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.putText(frame, text, (x, y), font, scale, color, 2, cv2.LINE_AA)
+        y += th + 28
+
+    cv2.line(frame,
+             (FRAME_WIDTH // 2 - 200, FRAME_HEIGHT // 2 + total_h // 2 + 20),
+             (FRAME_WIDTH // 2 + 200, FRAME_HEIGHT // 2 + total_h // 2 + 20),
+             (60, 60, 60), 1)
+
+    return frame
+
 
 def read_frames(process):
     """
@@ -71,25 +121,33 @@ def read_frames(process):
     """
     global _latest_raw_frame
 
+    consecutive_misses = 0
+
     while not shutdown_flag.is_set():
         try:
             raw_frame = process.stdout.read(FRAME_SIZE)
 
             if len(raw_frame) == 0:
-                # EOF — GStreamer process exited. Wait briefly and check if
-                # we should keep running (e.g. a restart could be wired in
-                # later). For now, just log and spin so the overlay thread
-                # and camera output loop keep running on the last good frame.
-                print("[WARNING] GStreamer stdout closed (stream ended). "
-                      "Waiting for restart or Ctrl+C...")
+                # EOF — GStreamer process exited.
+                consecutive_misses += 1
+                if consecutive_misses == 1:
+                    print("[WARNING] GStreamer stdout closed (stream ended). "
+                          "Waiting for restart or Ctrl+C...")
+                if consecutive_misses >= STREAM_DROPOUT_THRESHOLD:
+                    _stream_alive.clear()
                 time.sleep(1.0)
                 continue
 
             if len(raw_frame) != FRAME_SIZE:
                 # Partial frame — transient dropout or pipeline hiccup.
-                # Discard silently and keep reading; the last good frame
-                # will continue to be shown by the overlay/camera threads.
+                consecutive_misses += 1
+                if consecutive_misses >= STREAM_DROPOUT_THRESHOLD:
+                    _stream_alive.clear()
                 continue
+
+            # Good frame — reset miss counter and mark stream as live.
+            consecutive_misses = 0
+            _stream_alive.set()
 
             # Convert raw bytes to numpy array (copy to make it writable)
             frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape(
@@ -107,6 +165,9 @@ def read_frames(process):
 
         except Exception as e:
             print(f"[WARNING] Error reading frame: {e}. Continuing...")
+            consecutive_misses += 1
+            if consecutive_misses >= STREAM_DROPOUT_THRESHOLD:
+                _stream_alive.clear()
             time.sleep(0.05)
             continue
 
