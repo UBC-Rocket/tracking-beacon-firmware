@@ -101,6 +101,7 @@ def main():
     print(f"Expected resolution: {FRAME_WIDTH}x{FRAME_HEIGHT}")
 
     # GStreamer pipeline - outputs raw BGR frames to stdout
+    # max-size-buffers will buffer up to x before it starts to drop stuff => frames pile up in gstreamers queue and python reads them from the queue. make this small so frames are dropped if the python code isnt running fast enough
     gst_command = [
         'gst-launch-1.0.exe' if sys.platform == "win32" else 'gst-launch-1.0',
         '-q',

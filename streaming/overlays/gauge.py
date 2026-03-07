@@ -126,10 +126,18 @@ class GaugeOverlay(OverlayBase):
         bg_x2 = bg_x1 + bg_w
         bg_y2 = bg_y1 + bg_h
 
-        # Alpha-blend the background rectangle
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (bg_x1, bg_y1), (bg_x2, bg_y2), BG_COLOR, -1)
-        cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+        # Alpha-blend the background rectangle (ROI-only to avoid copying full frame)
+        # Clamp to frame bounds
+        bg_y1_c = max(bg_y1, 0)
+        bg_y2_c = min(bg_y2, h)
+        bg_x1_c = max(bg_x1, 0)
+        bg_x2_c = min(bg_x2, w)
+
+        roi = frame[bg_y1_c:bg_y2_c, bg_x1_c:bg_x2_c]
+        roi_overlay = roi.copy()
+        cv2.rectangle(roi_overlay, (0, 0), (bg_x2_c - bg_x1_c, bg_y2_c - bg_y1_c), BG_COLOR, -1)
+        cv2.addWeighted(roi_overlay, 0.6, roi, 0.4, 0, roi)
+        frame[bg_y1_c:bg_y2_c, bg_x1_c:bg_x2_c] = roi
 
         # Draw gauges
         self._draw_gauge(frame, (left_cx, center_y), speed, self.max_speed, "SPEED", "M/S")
