@@ -1,0 +1,1 @@
+seq_id,timestamp,node_id,local_rssi,remote_rssi,packets,local_noise,remote_noise,local_snr,remote_snr,txe,rxe,stx,srx,ecc_local,ecc_remote,temp,dco
