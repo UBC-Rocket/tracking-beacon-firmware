@@ -1,53 +1,9 @@
-# Prerequisites
-*.d
+.clangd
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+build
+mx.scratch
+!.settings
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# Debug information files
-*.dwo
-
-# Personal VSCode configuration files
-.vscode/*
-!.vscode/extensions.json
-!.vscode/launch.json
-
-# CMake build directory
-build/
-
-# Mac
-.DS_Store
-
+.claude/
+.settings/
+.vscode/

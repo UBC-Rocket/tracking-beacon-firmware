@@ -1,9 +1,0 @@
-.clangd
-
-build
-mx.scratch
-!.settings
-
-.claude/
-.settings/
-.vscode/
