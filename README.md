@@ -6,7 +6,6 @@ STM32F446 microcontroller firmware for an automated antenna tracking system usin
 
 This firmware implements a real-time tracking beacon system that:
 - Controls two stepper motors (azimuth and elevation) for antenna positioning
-- Reads RSSI (Received Signal Strength Indicator) from 5 antenna elements
 - Provides manual alignment and automatic tracking capabilities
 - Supports passthrough communication between ground station and beacon
 
@@ -39,75 +38,29 @@ This firmware implements a real-time tracking beacon system that:
 | UART5 | 57600 | Outer antenna 3 (RSSI) |
 | USART6 | 57600 | Outer antenna 4 (RSSI) |
 
-## Core Modules
-
-### Stepper Module (`stepper.c/h`)
-Manages stepper motor control for antenna positioning:
-- Tracks position for azimuth (AZ) and elevation (EL) axes
-- Supports configurable step intervals
-- Provides zero position calibration
-- Non-blocking stepping with polling-based execution
-
-**Key Functions:**
-- `Stepper_Init()` - Initialize GPIO and timing
-- `Stepper_Step()` - Execute single step on specified axis
-- `Stepper_SetTarget()` - Set target position with automatic movement
-- `Stepper_Poll()` - Non-blocking motor control polling
-- `Stepper_ZeroPosition()` - Calibrate current position as zero
-
-### RSSI Module (`rssi.c/h`)
-Processes signal strength measurements from 5 antenna elements:
-- Receives RSSI telemetry via UART (DMA-based)
-- Tracks activity status and timestamps for each antenna
-- Provides signal strength readings for tracking algorithms
-
-**Antenna Mapping:**
-- Index 0-3: Outer antenna elements (USART3, UART4, UART5, USART6)
-- Index 4: Center antenna element (USART1)
-
-### Setup Module (`setup.c/h`)
-Handles system initialization and manual control:
-- **Manual Alignment Phase:** Blocks during startup for user-directed motor positioning
-- **Active Mode:** Accepts WASD keyboard commands for real-time antenna adjustment
-- Provides interactive feedback via UART2 echo
-
-### Passthrough Module (`passthrough.c/h`)
-Bidirectional data relay between ground station and beacon:
-- Routes messages between different UART channels
-- Manages buffering for asynchronous communication
-- Supports concurrent Rx/Tx operations with DMA
-
 ## System State Machines
 
-![State Machine Diagram](assets/state_machine.svg)
+![State Machine Diagram](assets/state_machine.png)
 
 ## Building
 
-Requires CMake 3.20+ and ARM GCC toolchain:
-
-```bash
-cmake --preset default
-cmake --build --preset default
-```
+IN PROGRESS
 
 ## Flashing
 
-Connect STM32F446 via USB and use ST-Link or your preferred programming tool:
-
-```bash
-# Using STM32CubeProgrammer or OpenOCD
-openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
-  -c "program build/tracking-beacon-firmware.elf verify reset exit"
-```
+IN PROGRESS
 
 ## Usage
 
 ### Startup Sequence
 1. Power on STM32F446
 2. Enter **Manual Alignment** mode (blocks execution)
-3. Use UART2 terminal (115200 baud) to send WASD commands
-4. Press **ENTER** to exit alignment and start tracking
-5. System enters main loop with active tracking
+    - Use UART2 terminal to send WASD commands
+    - Press **ENTER** to exit alignment
+3. Enter **GPS Initialization** mode (blocks execution)
+    - Use UART2 terminal to send GPS coordinates
+    - Press **ENTER** to exit initialization
+4. System enters main loop with active tracking
 
 ### Runtime Commands
 - **W** - Increase elevation
@@ -115,57 +68,13 @@ openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
 - **S** - Decrease elevation
 - **D** - Increase azimuth (CW)
 
-### Monitoring
-Connect to UART2 (115200 baud) to observe:
-- Manual alignment prompts
-- Echo of keyboard input
-- Motor position feedback
 
-## Project Structure
-
-```
-Core/
-├── Inc/           # Header files
-│   ├── main.h
-│   ├── stepper.h
-│   ├── rssi.h
-│   ├── setup.h
-│   └── passthrough.h
-└── Src/           # Implementation files
-    ├── main.c
-    ├── stepper.c
-    ├── rssi.c
-    ├── setup.c
-    ├── passthrough.c
-    └── ... (HAL generated files)
-
-Drivers/           # STM32 HAL libraries
-cmake/             # Build configuration
-```
-
-## Key Features
-
-- **Non-Blocking Architecture:** All modules use polling/DMA to avoid blocking the main loop
-- **Multi-UART Support:** 6 independent serial channels with DMA transfers
-- **Stepper Abstraction:** Clean API for motor control independent of GPIO configuration
-- **Manual + Auto Control:** Supports both interactive alignment and algorithmic tracking
-- **Signal Processing:** Real-time RSSI monitoring from antenna array
-- **Error Handling:** Graceful degradation with activity timeouts
-
-## Future Enhancements
-
-- Implement automatic tracking algorithm using RSSI null-steering
-- Add PID control for smooth motor movements
-- SD card logging of tracking data
-- Network communication for remote control
-- Kalman filtering for noisy RSSI measurements
-
-## License
-
-This project is provided as-is under the terms found in the LICENSE file.
-
-## References
-
-- **STM32F446 Datasheet:** ARM Cortex-M4 @ 84 MHz
-- **ST HAL Documentation:** Hardware Abstraction Layer API reference
-- **Antenna Array Design:** Null-steering with 5-element cross configuration
+## To Do Features
+- Overall state machine implementation
+- Manual tracking input
+- GPS coordinate input
+- Logic of current angle
+- Protobuf implementation for passthrough data 
+- Communication with Helios through UART for manual tracking, GPS inputs, and packet delivery
+- Monopulse PID tracking
+- Limit switch implementation
