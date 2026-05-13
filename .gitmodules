@@ -1,0 +1,3 @@
+[submodule "falcon-protos"]
+	path = falcon-protos
+	url = https://github.com/ubc-rocket/falcon-protos
